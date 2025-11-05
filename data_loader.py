@@ -2,10 +2,11 @@
 Data management module for StatsBomb data with Parquet caching.
 """
 
-import pandas as pd
 import warnings
 from pathlib import Path
 from typing import Dict, Optional
+
+import pandas as pd
 from statsbombpy import sb
 
 
@@ -70,7 +71,6 @@ class DataLoader:
     ) -> pd.DataFrame:
         """Fetch events for a match, using cache if available."""
         if not force_refresh and self.is_match_cached(season_id, match_id):
-            print(f"Loading cached data for match {match_id}")
             return self.load_match_events(season_id, match_id)
 
         try:

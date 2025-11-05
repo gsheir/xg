@@ -4,3 +4,4 @@ SEASON_IDS = {
     "2019/2020": 42,
     "2020/2021": 90,
 }
+OUTPUT_DIR = "output/"
