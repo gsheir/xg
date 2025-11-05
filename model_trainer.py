@@ -130,7 +130,7 @@ class ModelTrainer:
 
         return self.model
 
-    def train_with_cv(
+    def train_with_cross_val(
         self,
         X: pd.DataFrame,
         y: pd.Series,

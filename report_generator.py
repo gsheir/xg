@@ -4,7 +4,7 @@ Report generation module for creating model evaluation reports and visualization
 
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -201,6 +201,189 @@ class ReportGenerator:
 
         return str(save_path)
 
+    def plot_logistic_curve(
+        self,
+        model: Any,
+        feature_name: str,
+        X: np.ndarray,
+        y: np.ndarray,
+        model_name: str,
+        save_path: Optional[str] = None,
+    ) -> str:
+        """
+        Plot logistic regression curve showing the fitted model.
+
+        Args:
+            model: Trained model
+            feature_name: Name of the feature being plotted
+            X: Feature values (1D array)
+            y: True labels
+            model_name: Name of the model
+            save_path: Path to save the plot (if None, auto-generated)
+
+        Returns:
+            Path where plot was saved
+        """
+        import pandas as pd
+
+        fig, ax = plt.subplots(figsize=FIGURE_SIZE_SINGLE)
+
+        # Create range for smooth curve
+        x_min, x_max = X.min(), X.max()
+        x_range = np.linspace(x_min, x_max, 300)
+
+        # Predict probabilities for the range
+        X_range_df = pd.DataFrame({feature_name: x_range})
+        y_pred = model.predict(X_range_df)
+
+        # Plot the logistic curve
+        ax.plot(x_range, y_pred, "b-", linewidth=2, label="Logistic Curve")
+
+        # Calculate binned actual rates for overlay
+        n_bins = 20
+        bins = np.linspace(x_min, x_max, n_bins + 1)
+        bin_indices = np.digitize(X, bins) - 1
+        bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+        bin_centers = []
+        actual_rates = []
+        for i in range(n_bins):
+            mask = bin_indices == i
+            if mask.sum() > 5:  # Only show bins with enough samples
+                bin_centers.append((bins[i] + bins[i + 1]) / 2)
+                actual_rates.append(y[mask].mean())
+
+        # Plot actual rates as scatter points
+        ax.scatter(
+            bin_centers,
+            actual_rates,
+            color="red",
+            s=50,
+            alpha=0.6,
+            label="Actual Goal Rate (binned)",
+            zorder=5,
+        )
+
+        ax.set_xlabel(feature_name.replace("_", " ").title(), fontsize=12)
+        ax.set_ylabel("Goal Probability", fontsize=12)
+        ax.set_title(
+            f"Logistic Curve: {model_name}", fontsize=14, fontweight="bold"
+        )
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(-0.05, 1.05)
+
+        plt.tight_layout()
+
+        if save_path is None:
+            save_path = self.output_dir / f"{model_name}_logistic_curve.png"
+        else:
+            save_path = Path(save_path)
+
+        plt.savefig(save_path, dpi=PLOT_DPI, bbox_inches="tight")
+        plt.close()
+
+        return str(save_path)
+
+    def plot_feature_vs_probability(
+        self,
+        model: Any,
+        feature_name: str,
+        X: np.ndarray,
+        y: np.ndarray,
+        model_name: str,
+        save_path: Optional[str] = None,
+    ) -> str:
+        """
+        Plot feature values against predicted goal probabilities with actual outcomes.
+
+        Args:
+            model: Trained model
+            feature_name: Name of the feature being plotted
+            X: Feature values (1D array)
+            y: True labels (0 or 1)
+            model_name: Name of the model
+            save_path: Path to save the plot (if None, auto-generated)
+
+        Returns:
+            Path where plot was saved
+        """
+        import pandas as pd
+
+        fig, ax = plt.subplots(figsize=FIGURE_SIZE_SINGLE)
+
+        # Get predictions
+        X_df = pd.DataFrame({feature_name: X})
+        y_pred = model.predict(X_df)
+
+        # Separate goals and non-goals
+        goals_mask = y == 1
+        non_goals_mask = y == 0
+
+        # Plot scatter points with jitter for better visibility
+        jitter = 0.02
+        y_jitter_goals = y[goals_mask] + np.random.uniform(
+            -jitter, jitter, goals_mask.sum()
+        )
+        y_jitter_non_goals = y[non_goals_mask] + np.random.uniform(
+            -jitter, jitter, non_goals_mask.sum()
+        )
+
+        ax.scatter(
+            X[goals_mask],
+            y_jitter_goals,
+            c="green",
+            alpha=0.3,
+            s=20,
+            label="Goals",
+            marker="^",
+        )
+        ax.scatter(
+            X[non_goals_mask],
+            y_jitter_non_goals,
+            c="red",
+            alpha=0.2,
+            s=20,
+            label="Non-Goals",
+            marker="v",
+        )
+
+        # Plot predicted probabilities as a line
+        sorted_idx = np.argsort(X)
+        ax.plot(
+            X[sorted_idx],
+            y_pred[sorted_idx],
+            "b-",
+            linewidth=2,
+            label="Predicted Probability",
+            alpha=0.8,
+        )
+
+        ax.set_xlabel(feature_name.replace("_", " ").title(), fontsize=12)
+        ax.set_ylabel("Goal Probability / Outcome", fontsize=12)
+        ax.set_title(
+            f"{feature_name.replace('_', ' ').title()} vs Goal Probability: {model_name}",
+            fontsize=14,
+            fontweight="bold",
+        )
+        ax.legend(loc="best", fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(-0.1, 1.1)
+
+        plt.tight_layout()
+
+        if save_path is None:
+            save_path = (
+                self.output_dir / f"{model_name}_feature_vs_probability.png"
+            )
+        else:
+            save_path = Path(save_path)
+
+        plt.savefig(save_path, dpi=PLOT_DPI, bbox_inches="tight")
+        plt.close()
+
+        return str(save_path)
+
     def plot_metrics_comparison(
         self,
         models_metrics: Dict[str, Dict],
@@ -276,6 +459,10 @@ class ReportGenerator:
         evaluation_results: Dict,
         training_metadata: Optional[Dict] = None,
         save_path: Optional[str] = None,
+        model: Optional[Any] = None,
+        X: Optional[Any] = None,
+        y: Optional[Any] = None,
+        features: Optional[List[str]] = None,
     ) -> str:
         """
         Generate a markdown report for a single model.
@@ -285,6 +472,10 @@ class ReportGenerator:
             evaluation_results: Evaluation results dictionary
             training_metadata: Training metadata dictionary
             save_path: Path to save the report (if None, auto-generated)
+            model: Trained model (for generating plots)
+            X: Feature data (for generating plots)
+            y: Target data (for generating plots)
+            features: List of feature names used by the model
 
         Returns:
             Path where report was saved
@@ -380,6 +571,42 @@ class ReportGenerator:
                 )
 
         report_lines.append("\n---\n")
+
+        # Generate plots if model and data are provided
+        if model is not None and X is not None and y is not None and features:
+            report_lines.append("## Visualizations\n")
+            
+            import pandas as pd
+            
+            # Get the feature data
+            if len(features) == 1:
+                feature_name = features[0]
+                X_feature = X[feature_name].values
+                y_vals = y.values
+                
+                # Generate logistic curve plot
+                logistic_curve_path = self.plot_logistic_curve(
+                    model=model,
+                    feature_name=feature_name,
+                    X=X_feature,
+                    y=y_vals,
+                    model_name=model_name,
+                )
+                report_lines.append(f"### Logistic Curve\n")
+                report_lines.append(f"![Logistic Curve]({Path(logistic_curve_path).name})\n")
+                
+                # Generate feature vs probability plot
+                feature_prob_path = self.plot_feature_vs_probability(
+                    model=model,
+                    feature_name=feature_name,
+                    X=X_feature,
+                    y=y_vals,
+                    model_name=model_name,
+                )
+                report_lines.append(f"### {feature_name.replace('_', ' ').title()} vs Goal Probability\n")
+                report_lines.append(f"![Feature vs Probability]({Path(feature_prob_path).name})\n")
+            
+            report_lines.append("\n---\n")
 
         # Save report
         if save_path is None:

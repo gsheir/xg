@@ -6,8 +6,6 @@ import pandas as pd
 from data_loader import DataLoader
 from experiment_manager import ExperimentManager
 from models.logistic_regression import LogisticRegressionModel
-from models.random_forest import RandomForestModel
-from models.xgboost_model import XGBoostModel
 from settings import COMPETITION_ID, SEASON_IDS
 
 
@@ -153,30 +151,9 @@ def run_experiments():
         features=["distance"],
     )
 
-    # Model 3: Logistic Regression - Combined
-    experiment.register_model(
-        model_class=LogisticRegressionModel,
-        model_name="logistic_combined",
-        features=["distance", "angle"],
-    )
-
-    # Model 4: Random Forest
-    experiment.register_model(
-        model_class=RandomForestModel,
-        model_name="random_forest",
-        features=["distance", "angle"],
-    )
-
-    # Model 5: XGBoost
-    experiment.register_model(
-        model_class=XGBoostModel,
-        model_name="xgboost",
-        features=["distance", "angle"],
-    )
-
     # 5. Run the experiment
     print("\n5. Running experiment...")
-    experiment.run_experiment(force_retrain=False)
+    experiment.run_experiment(force_retrain=True)
 
     print("\n" + "=" * 60)
     print("Experiment completed successfully!")

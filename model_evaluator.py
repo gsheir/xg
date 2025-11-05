@@ -7,14 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
-    accuracy_score,
-    confusion_matrix,
-    f1_score,
-    log_loss,
-    precision_score,
-    recall_score,
+    brier_score_loss,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
     roc_auc_score,
-    roc_curve,
 )
 
 
@@ -55,83 +52,107 @@ class ModelEvaluator:
             X = X[self.features]
         return self.model.predict(X)
 
-    def predict_classes(self, X: pd.DataFrame, threshold: float = 0.5) -> np.ndarray:
-        """
-        Get class predictions from the model.
-
-        Args:
-            X: Features to predict on
-            threshold: Probability threshold for classification
-
-        Returns:
-            Predicted classes (0 or 1)
-        """
-        proba = self.predict(X)
-        return (proba >= threshold).astype(int)
-
     def calculate_metrics(
         self,
         y_true: np.ndarray,
-        y_pred: np.ndarray,
-        y_proba: Optional[np.ndarray] = None,
+        y_pred_proba: np.ndarray,
     ) -> Dict:
         """
-        Calculate comprehensive metrics.
+        Calculate comprehensive regression metrics for xG evaluation.
 
         Args:
-            y_true: True labels
-            y_pred: Predicted classes
-            y_proba: Predicted probabilities (optional)
+            y_true: True labels (0 or 1 for goals)
+            y_pred_proba: Predicted probabilities (continuous 0-1)
 
         Returns:
             Dictionary of metrics
         """
         metrics = {
-            "accuracy": accuracy_score(y_true, y_pred),
-            "precision": precision_score(y_true, y_pred, zero_division=0),
-            "recall": recall_score(y_true, y_pred, zero_division=0),
-            "f1_score": f1_score(y_true, y_pred, zero_division=0),
+            "mae": mean_absolute_error(y_true, y_pred_proba),
+            "mse": mean_squared_error(y_true, y_pred_proba),
+            "rmse": np.sqrt(mean_squared_error(y_true, y_pred_proba)),
+            "r2_score": r2_score(y_true, y_pred_proba),
+            "brier_score": brier_score_loss(y_true, y_pred_proba),
+            "roc_auc": roc_auc_score(y_true, y_pred_proba),
         }
-
-        if y_proba is not None:
-            metrics["roc_auc"] = roc_auc_score(y_true, y_proba)
-            metrics["log_loss"] = log_loss(y_true, y_proba)
 
         return metrics
 
-    def confusion_matrix(self, y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
-        """
-        Calculate confusion matrix.
-
-        Args:
-            y_true: True labels
-            y_pred: Predicted classes
-
-        Returns:
-            Confusion matrix
-        """
-        return confusion_matrix(y_true, y_pred)
-
-    def roc_curve_data(
-        self, y_true: np.ndarray, y_proba: np.ndarray
+    def calculate_calibration_curve(
+        self, y_true: np.ndarray, y_pred_proba: np.ndarray, n_bins: int = 10
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Calculate ROC curve data.
+        Calculate calibration curve data by binning predictions.
 
         Args:
-            y_true: True labels
-            y_proba: Predicted probabilities
+            y_true: True labels (0 or 1)
+            y_pred_proba: Predicted probabilities
+            n_bins: Number of bins for calibration
 
         Returns:
-            Tuple of (fpr, tpr, thresholds)
+            Tuple of (bin_midpoints, actual_rates, bin_counts)
         """
-        return roc_curve(y_true, y_proba)
+        # Create bins
+        bins = np.linspace(0, 1, n_bins + 1)
+        bin_indices = np.digitize(y_pred_proba, bins) - 1
+        bin_indices = np.clip(bin_indices, 0, n_bins - 1)
+
+        bin_midpoints = []
+        actual_rates = []
+        bin_counts = []
+
+        for i in range(n_bins):
+            mask = bin_indices == i
+            if mask.sum() > 0:
+                bin_midpoints.append((bins[i] + bins[i + 1]) / 2)
+                actual_rates.append(y_true[mask].mean())
+                bin_counts.append(mask.sum())
+            else:
+                bin_midpoints.append((bins[i] + bins[i + 1]) / 2)
+                actual_rates.append(np.nan)
+                bin_counts.append(0)
+
+        return (
+            np.array(bin_midpoints),
+            np.array(actual_rates),
+            np.array(bin_counts),
+        )
+
+    def calculate_expected_calibration_error(
+        self, y_true: np.ndarray, y_pred_proba: np.ndarray, n_bins: int = 10
+    ) -> float:
+        """
+        Calculate Expected Calibration Error (ECE).
+
+        Args:
+            y_true: True labels (0 or 1)
+            y_pred_proba: Predicted probabilities
+            n_bins: Number of bins
+
+        Returns:
+            ECE value
+        """
+        bin_midpoints, actual_rates, bin_counts = self.calculate_calibration_curve(
+            y_true, y_pred_proba, n_bins
+        )
+
+        # Filter out bins with no samples
+        valid_bins = bin_counts > 0
+        bin_midpoints = bin_midpoints[valid_bins]
+        actual_rates = actual_rates[valid_bins]
+        bin_counts = bin_counts[valid_bins]
+
+        # Calculate weighted average of absolute differences
+        total_samples = bin_counts.sum()
+        ece = np.sum(bin_counts / total_samples * np.abs(bin_midpoints - actual_rates))
+
+        return float(ece)
 
     def evaluate(
         self,
         X_test: pd.DataFrame,
         y_test: pd.Series,
-        threshold: float = 0.5,
+        n_bins: int = 10,
     ) -> Dict:
         """
         Perform full evaluation on test set.
@@ -139,38 +160,44 @@ class ModelEvaluator:
         Args:
             X_test: Test features
             y_test: Test targets
-            threshold: Classification threshold
+            n_bins: Number of bins for calibration curve
 
         Returns:
             Dictionary with evaluation results
         """
         # Get predictions
-        y_proba = self.predict(X_test)
-        y_pred = (y_proba >= threshold).astype(int)
+        y_pred_proba = self.predict(X_test)
 
         # Calculate metrics
-        metrics = self.calculate_metrics(y_test.values, y_pred, y_proba)
+        metrics = self.calculate_metrics(y_test.values, y_pred_proba)
 
-        # Calculate confusion matrix
-        cm = self.confusion_matrix(y_test.values, y_pred)
+        # Calculate calibration curve
+        bin_midpoints, actual_rates, bin_counts = self.calculate_calibration_curve(
+            y_test.values, y_pred_proba, n_bins
+        )
 
-        # Calculate ROC curve data
-        fpr, tpr, thresholds = self.roc_curve_data(y_test.values, y_proba)
+        # Calculate ECE
+        ece = self.calculate_expected_calibration_error(
+            y_test.values, y_pred_proba, n_bins
+        )
+        metrics["ece"] = ece
 
         # Store results
         self.evaluation_results = {
             "model_name": self.model_name,
             "metrics": metrics,
-            "confusion_matrix": cm.tolist(),
-            "roc_curve": {
-                "fpr": fpr.tolist(),
-                "tpr": tpr.tolist(),
-                "thresholds": thresholds.tolist(),
+            "calibration_curve": {
+                "bin_midpoints": bin_midpoints.tolist(),
+                "actual_rates": [
+                    float(x) if not np.isnan(x) else None for x in actual_rates
+                ],
+                "bin_counts": bin_counts.tolist(),
             },
             "n_samples": len(y_test),
-            "n_positive": int(y_test.sum()),
-            "n_negative": int(len(y_test) - y_test.sum()),
-            "threshold": threshold,
+            "n_goals": int(y_test.sum()),
+            "n_non_goals": int(len(y_test) - y_test.sum()),
+            "mean_prediction": float(y_pred_proba.mean()),
+            "std_prediction": float(y_pred_proba.std()),
         }
 
         return self.evaluation_results
@@ -181,7 +208,7 @@ class ModelEvaluator:
         X: pd.DataFrame,
         y: pd.Series,
         cv_splits: List[Tuple[np.ndarray, np.ndarray]],
-        threshold: float = 0.5,
+        n_bins: int = 10,
         features: Optional[List[str]] = None,
     ) -> Dict:
         """
@@ -192,7 +219,7 @@ class ModelEvaluator:
             X: Full feature dataset
             y: Full target series
             cv_splits: List of (train_indices, val_indices) tuples
-            threshold: Classification threshold
+            n_bins: Number of bins for calibration curve
             features: List of feature names to use (if None, uses self.features)
 
         Returns:
@@ -203,7 +230,7 @@ class ModelEvaluator:
 
         fold_metrics = []
         all_y_true = []
-        all_y_proba = []
+        all_y_pred_proba = []
 
         for fold_idx, (model, (train_idx, val_idx)) in enumerate(
             zip(models, cv_splits)
@@ -215,18 +242,26 @@ class ModelEvaluator:
             evaluator = ModelEvaluator(
                 model, f"{self.model_name}_fold{fold_idx}", features=feature_list
             )
-            fold_results = evaluator.evaluate(X_val, y_val, threshold=threshold)
+            fold_results = evaluator.evaluate(X_val, y_val, n_bins=n_bins)
 
             fold_metrics.append(fold_results["metrics"])
             all_y_true.extend(y_val.values)
-            all_y_proba.extend(evaluator.predict(X_val))
+            all_y_pred_proba.extend(evaluator.predict(X_val))
 
         # Calculate aggregate metrics
         all_y_true = np.array(all_y_true)
-        all_y_proba = np.array(all_y_proba)
-        all_y_pred = (all_y_proba >= threshold).astype(int)
+        all_y_pred_proba = np.array(all_y_pred_proba)
 
-        aggregate_metrics = self.calculate_metrics(all_y_true, all_y_pred, all_y_proba)
+        aggregate_metrics = self.calculate_metrics(all_y_true, all_y_pred_proba)
+
+        # Calculate aggregate calibration
+        bin_midpoints, actual_rates, bin_counts = self.calculate_calibration_curve(
+            all_y_true, all_y_pred_proba, n_bins
+        )
+        ece = self.calculate_expected_calibration_error(
+            all_y_true, all_y_pred_proba, n_bins
+        )
+        aggregate_metrics["ece"] = ece
 
         # Calculate mean and std for each metric across folds
         metrics_summary = {}
@@ -244,9 +279,15 @@ class ModelEvaluator:
             "model_name": self.model_name,
             "cv_metrics_summary": metrics_summary,
             "aggregate_metrics": aggregate_metrics,
+            "aggregate_calibration_curve": {
+                "bin_midpoints": bin_midpoints.tolist(),
+                "actual_rates": [
+                    float(x) if not np.isnan(x) else None for x in actual_rates
+                ],
+                "bin_counts": bin_counts.tolist(),
+            },
             "fold_metrics": fold_metrics,
             "n_folds": len(models),
-            "threshold": threshold,
         }
 
         return self.evaluation_results

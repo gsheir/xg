@@ -45,7 +45,7 @@ class ExperimentManager:
         # Data storage
         self.X = None
         self.y = None
-        self.cv_splits = None
+        self.cross_val_splits = None
 
         # Components
         self.splitter = DataSplitter()
@@ -94,7 +94,7 @@ class ExperimentManager:
 
         print(f"Set dataset: {len(X)} samples, {len(X.columns)} features")
 
-    def create_cv_splits(
+    def create_cross_val_splits(
         self,
         n_folds: int = N_CV_FOLDS,
         stratified: bool = True,
@@ -110,7 +110,7 @@ class ExperimentManager:
             raise ValueError("Data must be set before creating splits")
 
         print(f"\nCreating {n_folds}-fold cross-validation splits...")
-        self.cv_splits = self.splitter.k_fold_split(
+        self.cross_val_splits = self.splitter.k_fold_split(
             self.X, self.y, n_folds=n_folds, stratified=stratified
         )
 
@@ -123,11 +123,11 @@ class ExperimentManager:
 
         self.splitter.save_cross_val_splits_metadata(
             f"{self.experiment_name}_splits",
-            self.cv_splits,
+            self.cross_val_splits,
             metadata=split_metadata,
         )
 
-        print(f"Created {len(self.cv_splits)} CV splits")
+        print(f"Created {len(self.cross_val_splits)} cross-validation splits")
 
     def train_all_models(self, force_retrain: bool = False):
         """
@@ -139,8 +139,8 @@ class ExperimentManager:
         if self.X is None or self.y is None:
             raise ValueError("Data must be set before training")
 
-        if self.cv_splits is None:
-            raise ValueError("CV splits must be created before training")
+        if self.cross_val_splits is None:
+            raise ValueError("Cross-validation splits must be created before training")
 
         print(f"\n{'=' * 60}")
         print(f"Training {len(self.models_config)} models")
@@ -157,9 +157,9 @@ class ExperimentManager:
                 hyperparams=config["hyperparams"],
             )
 
-            # Train with CV
-            models = trainer.train_with_cv(
-                self.X, self.y, self.cv_splits, force_retrain=force_retrain
+            # Train with cross-validation
+            models = trainer.train_with_cross_val(
+                self.X, self.y, self.cross_val_splits, force_retrain=force_retrain
             )
 
             # Store trainer and models
@@ -174,7 +174,7 @@ class ExperimentManager:
         print(f"{'=' * 60}\n")
 
     def evaluate_all_models(self):
-        """Evaluate all trained models on the CV splits."""
+        """Evaluate all trained models on the cross-validation splits."""
         if not self.trained_models:
             raise ValueError("Models must be trained before evaluation")
 
@@ -188,12 +188,12 @@ class ExperimentManager:
             # Get features for this model
             features = self.models_config[model_name]["features"]
 
-            # Get first model for evaluation (all models in CV have same architecture)
+            # Get first model for evaluation (all models in cross-validation have same architecture)
             evaluator = ModelEvaluator(models[0], model_name, features=features)
 
-            # Evaluate with CV
+            # Evaluate with cross-validation
             results = evaluator.evaluate_cross_val(
-                models, self.X, self.y, self.cv_splits, features=features
+                models, self.X, self.y, self.cross_val_splits, features=features
             )
 
             self.evaluations[model_name] = results
@@ -211,11 +211,22 @@ class ExperimentManager:
         for model_name in self.trained_models.keys():
             evaluation_results = self.evaluations.get(model_name, {})
             training_metadata = self.metadata.get(model_name, {})
+            
+            # Get the first model (all CV models have same architecture)
+            models = self.trained_models.get(model_name, [])
+            model = models[0] if models else None
+            
+            # Get features for this model
+            features = self.models_config[model_name]["features"]
 
             self.report_generator.generate_single_model_report(
                 model_name=model_name,
                 evaluation_results=evaluation_results,
                 training_metadata=training_metadata,
+                model=model,
+                X=self.X,
+                y=self.y,
+                features=features,
             )
 
         print("Individual reports generated successfully\n")
@@ -317,7 +328,7 @@ class ExperimentManager:
             "created_at": datetime.now().isoformat(),
             "n_samples": len(self.X) if self.X is not None else 0,
             "n_features": len(self.X.columns) if self.X is not None else 0,
-            "n_folds": len(self.cv_splits) if self.cv_splits else 0,
+            "n_folds": len(self.cross_val_splits) if self.cross_val_splits else 0,
             "models": {
                 model_name: {
                     "model_class": config["model_class"].__name__,
@@ -353,8 +364,8 @@ class ExperimentManager:
             raise ValueError("Data must be set before running experiment")
 
         # Create CV splits if not already done
-        if self.cv_splits is None:
-            self.create_cv_splits()
+        if self.cross_val_splits is None:
+            self.create_cross_val_splits()
 
         # Save experiment configuration
         self.save_experiment_config()
