@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "joblib>=1.5.2",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.7",
     "mplsoccer>=1.6.0",
@@ -13,4 +14,5 @@ dependencies = [
     "ruff>=0.14.2",
     "scikit-learn>=1.7.2",
     "statsbombpy>=1.16.0",
+    "xgboost>=3.1.1",
 ]

@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from data_loader import DataLoader
+from experiment_manager import ExperimentManager
 from models.logistic_regression import LogisticRegressionModel
-from plotting_tools import plot_models
+from models.random_forest import RandomForestModel
+from models.xgboost_model import XGBoostModel
 from settings import COMPETITION_ID, SEASON_IDS
 
 
@@ -98,69 +100,89 @@ def prepare_xg_data(shots_df):
     ].copy()
 
 
-def create_logistic_models(data):
-    """Create logistic regression models for angle and distance."""
-    if data.empty:
-        print("No data available for modeling")
-        return None, None
-
-    print(f"Training models with {len(data)} shots")
-    print(f"Goals: {data['goal'].sum()}, Non-goals: {len(data) - data['goal'].sum()}")
-
-    # Model 1: Angle only
-    X_angle = data[["angle"]].values
-    y = data["goal"].values
-
-    angle_model = LogisticRegressionModel()
-    angle_model.fit(X_angle, y)
-
-    # Model 2: Distance only
-    X_distance = data[["distance"]].values
-
-    distance_model = LogisticRegressionModel()
-    distance_model.fit(X_distance, y)
-
-    return angle_model, distance_model
-
-
-def evaluate_models(data, angle_model, distance_model):
-    """Evaluate the logistic regression models."""
-    if data.empty or angle_model is None or distance_model is None:
-        return
-
-    X_angle = data[["angle"]].values
-    X_distance = data[["distance"]].values
-    y = data["goal"].values
-
-    pred_angle = angle_model.calculate_auc_score(X_angle, y)
-    pred_distance = distance_model.calculate_auc_score(X_distance, y)
-
-    return pred_angle, pred_distance
-
-
-def run_analysis():
+def run_experiments():
+    """Run the xG model experiment with multiple models and cross-validation."""
     plt.ioff()
-    print("Fetching shots data...")
+
+    print("=" * 60)
+    print("Expected Goals (xG) Model Comparison Experiment")
+    print("=" * 60)
+
+    # 1. Load and prepare data
+    print("\n1. Loading data...")
     shots_df = get_shots_data()
 
     if shots_df.empty:
         print("No shots data found!")
         return
 
-    print("Preparing data for xG modeling...")
+    print("\n2. Preparing data for xG modeling...")
     xg_data = prepare_xg_data(shots_df)
 
     if xg_data.empty:
         print("No valid shots data for modeling!")
         return
 
-    print("Creating logistic regression models...")
-    angle_model, distance_model = create_logistic_models(xg_data)
+    print(f"Prepared {len(xg_data)} shots for modeling")
 
-    if angle_model is not None and distance_model is not None:
-        evaluate_models(xg_data, angle_model, distance_model)
-        plot_models(xg_data, angle_model, distance_model)
+    # 3. Set up experiment
+    print("\n3. Setting up experiment...")
+    experiment = ExperimentManager("xg_model_comparison")
+
+    # Prepare features and target
+    feature_columns = ["distance", "angle"]
+    X = xg_data[feature_columns]
+    y = xg_data["goal"]
+
+    experiment.set_data(X, y)
+
+    # 4. Register models
+    print("\n4. Registering models...")
+
+    # Model 1: Logistic Regression - Angle only
+    experiment.register_model(
+        model_class=LogisticRegressionModel,
+        model_name="logistic_angle",
+        features=["angle"],
+    )
+
+    # Model 2: Logistic Regression - Distance only
+    experiment.register_model(
+        model_class=LogisticRegressionModel,
+        model_name="logistic_distance",
+        features=["distance"],
+    )
+
+    # Model 3: Logistic Regression - Combined
+    experiment.register_model(
+        model_class=LogisticRegressionModel,
+        model_name="logistic_combined",
+        features=["distance", "angle"],
+    )
+
+    # Model 4: Random Forest
+    experiment.register_model(
+        model_class=RandomForestModel,
+        model_name="random_forest",
+        features=["distance", "angle"],
+    )
+
+    # Model 5: XGBoost
+    experiment.register_model(
+        model_class=XGBoostModel,
+        model_name="xgboost",
+        features=["distance", "angle"],
+    )
+
+    # 5. Run the experiment
+    print("\n5. Running experiment...")
+    experiment.run_experiment(force_retrain=False)
+
+    print("\n" + "=" * 60)
+    print("Experiment completed successfully!")
+    print(f"Results saved to: {experiment.output_dir}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
-    run_analysis()
+    run_experiments()

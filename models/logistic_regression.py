@@ -2,11 +2,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 
 from models.base_model import BaseModel
+from settings import LOGISTIC_REGRESSION_PARAMS
 
 
 class LogisticRegressionModel(BaseModel):
-    def __init__(self):
-        self.model = LogisticRegression(random_state=42)
+    def __init__(self, **kwargs):
+        # Merge default params with any overrides
+        params = {**LOGISTIC_REGRESSION_PARAMS, **kwargs}
+        self.model = LogisticRegression(**params)
         self.fitted = False
 
     def fit(self, X, y):
