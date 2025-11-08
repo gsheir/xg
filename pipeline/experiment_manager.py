@@ -10,11 +10,11 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from data_splitter import DataSplitter
-from model_evaluator import ModelEvaluator
-from model_trainer import ModelTrainer
-from report_generator import ReportGenerator
-from settings import EXPERIMENTS_DIR, N_CV_FOLDS
+from pipeline.data_preprocessor import DataPreprocessor
+from pipeline.data_splitter import DataSplitter
+from pipeline.model_evaluator import ModelEvaluator
+from pipeline.model_trainer import ModelTrainer
+from pipeline.report_generator import ReportGenerator
 
 
 class ExperimentManager:
@@ -23,7 +23,7 @@ class ExperimentManager:
     def __init__(
         self,
         experiment_name: str,
-        output_dir: str = EXPERIMENTS_DIR,
+        experiment_settings: Dict[str, Any],
     ):
         """
         Initialize the experiment manager.
@@ -33,7 +33,9 @@ class ExperimentManager:
             output_dir: Directory for saving experiment outputs
         """
         self.experiment_name = experiment_name
-        self.output_dir = Path(output_dir) / experiment_name
+        self.experiment_settings = experiment_settings
+
+        self.output_dir = Path(experiment_settings["output_dir"]) / experiment_name
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         self.models_config = {}
@@ -43,16 +45,30 @@ class ExperimentManager:
         self.metadata = {}
 
         # Data storage
+        self.df = None
         self.X = None
         self.y = None
-        self.cross_val_splits = None
+        self.splits = None
 
         # Components
-        self.splitter = DataSplitter()
+        self.preprocessor = DataPreprocessor()
+        self.splitter = DataSplitter(
+            self.experiment_name, experiment_settings["split_settings"]
+        )
         self.report_generator = ReportGenerator(str(self.output_dir))
 
         print(f"Initialized experiment: {experiment_name}")
         print(f"Output directory: {self.output_dir}")
+
+    def register_dataset(self, df: pd.DataFrame):
+        """
+        Set the full dataset for the experiment.
+
+        Args:
+            X: Feature dataframe
+            y: Target series
+        """
+        self.df = df
 
     def register_model(
         self,
@@ -81,53 +97,22 @@ class ExperimentManager:
 
         print(f"Registered model: {model_name} with features {features}")
 
-    def set_data(self, X: pd.DataFrame, y: pd.Series):
-        """
-        Set the full dataset for the experiment.
-
-        Args:
-            X: Feature dataframe
-            y: Target series
-        """
-        self.X = X
-        self.y = y
-
-        print(f"Set dataset: {len(X)} samples, {len(X.columns)} features")
-
-    def create_cross_val_splits(
+    def create_splits(
         self,
-        n_folds: int = N_CV_FOLDS,
-        stratified: bool = True,
     ):
         """
         Create cross-validation splits.
 
         Args:
             n_folds: Number of CV folds
-            stratified: Whether to use stratified k-fold
         """
+
         if self.X is None or self.y is None:
             raise ValueError("Data must be set before creating splits")
 
-        print(f"\nCreating {n_folds}-fold cross-validation splits...")
-        self.cross_val_splits = self.splitter.k_fold_split(
-            self.X, self.y, n_folds=n_folds, stratified=stratified
-        )
+        self.splits = self.splitter.split(self.X, self.y)
 
-        # Save split metadata
-        split_metadata = {
-            "n_folds": n_folds,
-            "stratified": stratified,
-            "n_samples": len(self.X),
-        }
-
-        self.splitter.save_cross_val_splits_metadata(
-            f"{self.experiment_name}_splits",
-            self.cross_val_splits,
-            metadata=split_metadata,
-        )
-
-        print(f"Created {len(self.cross_val_splits)} cross-validation splits")
+        print(f"Created {len(self.splits)} cross-validation splits")
 
     def train_all_models(self, force_retrain: bool = False):
         """
@@ -139,12 +124,10 @@ class ExperimentManager:
         if self.X is None or self.y is None:
             raise ValueError("Data must be set before training")
 
-        if self.cross_val_splits is None:
+        if self.splits is None:
             raise ValueError("Cross-validation splits must be created before training")
 
-        print(f"\n{'=' * 60}")
         print(f"Training {len(self.models_config)} models")
-        print(f"{'=' * 60}")
 
         for model_name, config in self.models_config.items():
             print(f"\n--- Training: {model_name} ---")
@@ -157,10 +140,22 @@ class ExperimentManager:
                 hyperparams=config["hyperparams"],
             )
 
-            # Train with cross-validation
-            models = trainer.train_with_cross_val(
-                self.X, self.y, self.cross_val_splits, force_retrain=force_retrain
-            )
+            if self.experiment_settings["split_settings"]["split_type"] == "train_test":
+                # Train with train-test split
+                model = trainer.train(
+                    self.X,
+                    self.y,
+                    force_retrain=force_retrain,
+                )
+                models = [model]
+            else:
+                # Train with cross-validation
+                models = trainer.train_with_cross_val(
+                    self.X,
+                    self.y,
+                    self.splits["cv_splits"],
+                    force_retrain=force_retrain,
+                )
 
             # Store trainer and models
             self.trainers[model_name] = trainer
@@ -169,18 +164,14 @@ class ExperimentManager:
 
             print(f"Completed training: {model_name}")
 
-        print(f"\n{'=' * 60}")
         print("All models trained successfully")
-        print(f"{'=' * 60}\n")
 
     def evaluate_all_models(self):
         """Evaluate all trained models on the cross-validation splits."""
         if not self.trained_models:
             raise ValueError("Models must be trained before evaluation")
 
-        print(f"\n{'=' * 60}")
         print(f"Evaluating {len(self.trained_models)} models")
-        print(f"{'=' * 60}")
 
         for model_name, models in self.trained_models.items():
             print(f"\n--- Evaluating: {model_name} ---")
@@ -193,16 +184,14 @@ class ExperimentManager:
 
             # Evaluate with cross-validation
             results = evaluator.evaluate_cross_val(
-                models, self.X, self.y, self.cross_val_splits, features=features
+                models, self.X, self.y, self.splits["cv_splits"], features=features
             )
 
             self.evaluations[model_name] = results
 
             print(f"Completed evaluation: {model_name}")
 
-        print(f"\n{'=' * 60}")
         print("All models evaluated successfully")
-        print(f"{'=' * 60}\n")
 
     def generate_individual_reports(self):
         """Generate individual reports for each model."""
@@ -211,11 +200,11 @@ class ExperimentManager:
         for model_name in self.trained_models.keys():
             evaluation_results = self.evaluations.get(model_name, {})
             training_metadata = self.metadata.get(model_name, {})
-            
+
             # Get the first model (all CV models have same architecture)
             models = self.trained_models.get(model_name, [])
             model = models[0] if models else None
-            
+
             # Get features for this model
             features = self.models_config[model_name]["features"]
 
@@ -327,8 +316,6 @@ class ExperimentManager:
             "experiment_name": self.experiment_name,
             "created_at": datetime.now().isoformat(),
             "n_samples": len(self.X) if self.X is not None else 0,
-            "n_features": len(self.X.columns) if self.X is not None else 0,
-            "n_folds": len(self.cross_val_splits) if self.cross_val_splits else 0,
             "models": {
                 model_name: {
                     "model_class": config["model_class"].__name__,
@@ -337,6 +324,7 @@ class ExperimentManager:
                 }
                 for model_name, config in self.models_config.items()
             },
+            "experiment_settings": self.experiment_settings,
         }
 
         config_path = self.output_dir / "experiment_config.json"
@@ -345,27 +333,40 @@ class ExperimentManager:
 
         print(f"Saved experiment config to {config_path}")
 
-    def run_experiment(self, force_retrain: bool = False):
+    def run(self, force_retrain: bool = False):
         """
         Run the complete experiment pipeline.
 
         Args:
             force_retrain: If True, retrain even if cached models exist
         """
-        print(f"\n{'=' * 60}")
         print(f"Running Experiment: {self.experiment_name}")
-        print(f"{'=' * 60}\n")
 
         # Validate setup
         if not self.models_config:
             raise ValueError("No models registered for experiment")
 
-        if self.X is None or self.y is None:
-            raise ValueError("Data must be set before running experiment")
+        if self.df is None:
+            raise ValueError("No dataset registered for experiment")
 
-        # Create CV splits if not already done
-        if self.cross_val_splits is None:
-            self.create_cross_val_splits()
+        # Preprocess data
+        self.preprocessor.load_data(self.df)
+        self.df = self.preprocessor.prepare_xg_data()
+
+        if self.df.empty:
+            print("After preprocessing, no data is available.")
+            return
+
+        # Set features and target
+        feature_columns = self.experiment_settings["feature_columns"]
+        target_column = self.experiment_settings["target_column"]
+
+        self.X = self.df[feature_columns]
+        self.y = self.df[target_column]
+
+        # Create cross-validation splits if not already done
+        if self.splits is None:
+            self.create_splits()
 
         # Save experiment configuration
         self.save_experiment_config()
@@ -383,7 +384,5 @@ class ExperimentManager:
         # Get and display best model
         best_model_name, _, _ = self.get_best_model()
 
-        print(f"\n{'=' * 60}")
         print(f"Experiment Complete: {self.experiment_name}")
         print(f"Best Model: {best_model_name}")
-        print(f"{'=' * 60}\n")

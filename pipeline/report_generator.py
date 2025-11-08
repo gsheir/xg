@@ -11,7 +11,12 @@ import numpy as np
 from sklearn.calibration import calibration_curve
 from sklearn.metrics import ConfusionMatrixDisplay
 
-from settings import FIGURE_SIZE_COMPARISON, FIGURE_SIZE_SINGLE, OUTPUT_DIR, PLOT_DPI
+from pipeline.settings import (
+    FIGURE_SIZE_COMPARISON,
+    FIGURE_SIZE_SINGLE,
+    OUTPUT_DIR,
+    PLOT_DPI,
+)
 
 
 class ReportGenerator:
@@ -266,9 +271,7 @@ class ReportGenerator:
 
         ax.set_xlabel(feature_name.replace("_", " ").title(), fontsize=12)
         ax.set_ylabel("Goal Probability", fontsize=12)
-        ax.set_title(
-            f"Logistic Curve: {model_name}", fontsize=14, fontweight="bold"
-        )
+        ax.set_title(f"Logistic Curve: {model_name}", fontsize=14, fontweight="bold")
         ax.legend(loc="best", fontsize=10)
         ax.grid(True, alpha=0.3)
         ax.set_ylim(-0.05, 1.05)
@@ -373,9 +376,7 @@ class ReportGenerator:
         plt.tight_layout()
 
         if save_path is None:
-            save_path = (
-                self.output_dir / f"{model_name}_feature_vs_probability.png"
-            )
+            save_path = self.output_dir / f"{model_name}_feature_vs_probability.png"
         else:
             save_path = Path(save_path)
 
@@ -575,15 +576,13 @@ class ReportGenerator:
         # Generate plots if model and data are provided
         if model is not None and X is not None and y is not None and features:
             report_lines.append("## Visualizations\n")
-            
-            import pandas as pd
-            
+
             # Get the feature data
             if len(features) == 1:
                 feature_name = features[0]
                 X_feature = X[feature_name].values
                 y_vals = y.values
-                
+
                 # Generate logistic curve plot
                 logistic_curve_path = self.plot_logistic_curve(
                     model=model,
@@ -592,9 +591,11 @@ class ReportGenerator:
                     y=y_vals,
                     model_name=model_name,
                 )
-                report_lines.append(f"### Logistic Curve\n")
-                report_lines.append(f"![Logistic Curve]({Path(logistic_curve_path).name})\n")
-                
+                report_lines.append("### Logistic Curve\n")
+                report_lines.append(
+                    f"![Logistic Curve]({Path(logistic_curve_path).name})\n"
+                )
+
                 # Generate feature vs probability plot
                 feature_prob_path = self.plot_feature_vs_probability(
                     model=model,
@@ -603,9 +604,13 @@ class ReportGenerator:
                     y=y_vals,
                     model_name=model_name,
                 )
-                report_lines.append(f"### {feature_name.replace('_', ' ').title()} vs Goal Probability\n")
-                report_lines.append(f"![Feature vs Probability]({Path(feature_prob_path).name})\n")
-            
+                report_lines.append(
+                    f"### {feature_name.replace('_', ' ').title()} vs Goal Probability\n"
+                )
+                report_lines.append(
+                    f"![Feature vs Probability]({Path(feature_prob_path).name})\n"
+                )
+
             report_lines.append("\n---\n")
 
         # Save report

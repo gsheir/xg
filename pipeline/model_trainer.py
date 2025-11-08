@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from model_persistence import ModelPersistence
+from pipeline.model_persistence import ModelPersistence
 
 
 class ModelTrainer:

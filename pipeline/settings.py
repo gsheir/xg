@@ -9,13 +9,12 @@ SEASON_IDS = {
 # Directory settings
 OUTPUT_DIR = "output/"
 MODELS_DIR = "models/saved"
-SPLITS_DIR = "data/splits"
 EXPERIMENTS_DIR = "output/experiments"
 
 # Model training settings
 RANDOM_SEED = 42
 TEST_SIZE = 0.2
-N_CV_FOLDS = 5
+N_FOLDS = 5
 
 # Model hyperparameters
 LOGISTIC_REGRESSION_PARAMS = {

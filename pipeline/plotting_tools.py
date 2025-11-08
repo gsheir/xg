@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from settings import OUTPUT_DIR
+from pipeline.settings import OUTPUT_DIR
 
 
 def plot_models(data, angle_model, distance_model):

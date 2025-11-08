@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 
 import joblib
 
-from settings import MODELS_DIR
+from pipeline.settings import MODELS_DIR
 
 
 class ModelPersistence:
