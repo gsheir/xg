@@ -21,24 +21,3 @@ LOGISTIC_REGRESSION_PARAMS = {
     "random_state": RANDOM_SEED,
     "max_iter": 1000,
 }
-
-RANDOM_FOREST_PARAMS = {
-    "n_estimators": 100,
-    "random_state": RANDOM_SEED,
-    "max_depth": 10,
-    "min_samples_split": 5,
-}
-
-XGBOOST_PARAMS = {
-    "n_estimators": 100,
-    "random_state": RANDOM_SEED,
-    "max_depth": 5,
-    "learning_rate": 0.1,
-}
-
-# Plotting settings
-PLOT_DPI = 300
-PLOT_STYLE = "seaborn-v0_8-darkgrid"
-FIGURE_SIZE_SINGLE = (10, 8)
-FIGURE_SIZE_DOUBLE = (15, 6)
-FIGURE_SIZE_COMPARISON = (12, 10)

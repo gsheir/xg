@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
 from pipeline.data_preprocessor import DataPreprocessor
@@ -231,43 +230,8 @@ class ExperimentManager:
         )
 
         # Generate comparison plots
-        self._generate_comparison_plots()
 
         print("Comparison report generated successfully\n")
-
-    def _generate_comparison_plots(self):
-        """Generate comparison plots for all models."""
-        print("Generating comparison plots...")
-
-        # Extract aggregate metrics for comparison
-        aggregate_metrics = {}
-        for model_name, eval_results in self.evaluations.items():
-            if "aggregate_metrics" in eval_results:
-                aggregate_metrics[model_name] = eval_results["aggregate_metrics"]
-
-        if aggregate_metrics:
-            # Plot metrics comparison
-            self.report_generator.plot_metrics_comparison(aggregate_metrics)
-
-            # Plot ROC curves comparison
-            roc_data = {}
-            for model_name, eval_results in self.evaluations.items():
-                # Need to compute ROC for aggregate predictions
-                # For now, we'll use the first fold's ROC data as an approximation
-                if (
-                    "fold_metrics" in eval_results
-                    and len(eval_results["fold_metrics"]) > 0
-                ):
-                    auc = aggregate_metrics[model_name].get("roc_auc", 0)
-                    # Simplified - would need to recompute for aggregate predictions
-                    roc_data[model_name] = {
-                        "fpr": np.linspace(0, 1, 100),
-                        "tpr": np.linspace(0, 1, 100),  # Placeholder
-                        "auc": auc,
-                    }
-
-            if roc_data:
-                self.report_generator.plot_roc_curves_comparison(roc_data)
 
         print("Comparison plots generated successfully")
 
