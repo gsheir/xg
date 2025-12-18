@@ -192,48 +192,28 @@ class ExperimentManager:
 
         print("All models evaluated successfully")
 
-    def generate_individual_reports(self):
-        """Generate individual reports for each model."""
-        print("\nGenerating individual model reports...")
+    def generate_experiment_report(self):
+        """Generate comprehensive experiment report with all models."""
+        print("\nGenerating experiment report...")
 
-        for model_name in self.trained_models.keys():
-            evaluation_results = self.evaluations.get(model_name, {})
-            training_metadata = self.metadata.get(model_name, {})
+        # Prepare models features dictionary
+        models_features = {
+            model_name: config["features"]
+            for model_name, config in self.models_config.items()
+        }
 
-            # Get the first model (all CV models have same architecture)
-            models = self.trained_models.get(model_name, [])
-            model = models[0] if models else None
-
-            # Get features for this model
-            features = self.models_config[model_name]["features"]
-
-            self.report_generator.generate_single_model_report(
-                model_name=model_name,
-                evaluation_results=evaluation_results,
-                training_metadata=training_metadata,
-                model=model,
-                X=self.X,
-                y=self.y,
-                features=features,
-            )
-
-        print("Individual reports generated successfully\n")
-
-    def generate_comparison_report(self):
-        """Generate comparison report for all models."""
-        print("\nGenerating comparison report...")
-
-        # Generate markdown comparison report
+        # Generate comprehensive experiment report
         self.report_generator.generate_comparison_report(
             models_evaluations=self.evaluations,
             models_metadata=self.metadata,
+            trained_models=self.trained_models,
+            X=self.X,
+            y=self.y,
+            models_features=models_features,
+            df=self.df,
         )
 
-        # Generate comparison plots
-
-        print("Comparison report generated successfully\n")
-
-        print("Comparison plots generated successfully")
+        print("Experiment report generated successfully")
 
     def get_best_model(self, metric: str = "roc_auc") -> Tuple[str, Any, Dict]:
         """
@@ -341,9 +321,8 @@ class ExperimentManager:
         # Evaluate all models
         self.evaluate_all_models()
 
-        # Generate reports
-        self.generate_individual_reports()
-        self.generate_comparison_report()
+        # Generate comprehensive experiment report
+        self.generate_experiment_report()
 
         # Get and display best model
         best_model_name, _, _ = self.get_best_model()
